@@ -1,10 +1,19 @@
 //! # Configuration Module
 //!
-//! This module defines the configuration structures (`Config`, `AddonConfig`, `AgentConfig`) 
-//! loaded from `config.toml`. It also handles default configurations when the file is missing or values are omitted.
+//! This module defines the configuration structures (`Config`, `AddonConfig`, `AgentConfig`)
+//! loaded from `~/.nebula/config.toml`. It also handles default configurations when the file
+//! is missing or values are omitted.
 
 use serde::Deserialize;
 use std::path::PathBuf;
+
+/// Returns the nebula config directory (`~/.nebula`).
+pub fn nebula_dir() -> PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    PathBuf::from(home).join(".nebula")
+}
 
 /// Complete application configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -29,13 +38,13 @@ pub struct AddonConfig {
     /// Toggles the custom memory and session history addon on or off. Defaults to `true`.
     #[serde(default = "default_addon_enabled")]
     pub enabled: bool,
-    /// Path to the long-term markdown memory file. Defaults to `data/memory/long_term_memory.md`.
+    /// Path to the long-term markdown memory file. Defaults to `~/.nebula/data/memory/long_term_memory.md`.
     #[serde(default = "default_memory_file")]
     pub memory_file: String,
-    /// Path to the folder containing session history data. Defaults to `data/memory/chats`.
+    /// Path to the folder containing session history data. Defaults to `~/.nebula/data/memory/chats`.
     #[serde(default = "default_session_dir")]
     pub session_history_dir: String,
-    /// Path to the markdown file defining the agent's persona. Defaults to `data/agent.md`.
+    /// Path to the markdown file defining the agent's persona. Defaults to `~/.nebula/data/agent.md`.
     #[serde(default = "default_agent_md")]
     pub agent_md_path: String,
 }
@@ -43,7 +52,7 @@ pub struct AddonConfig {
 /// Configuration settings for the AI Agent runner.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentConfig {
-    /// The command to launch the AI agent process (e.g., `"openclaw"`, `"hermes"`, `"opencode"`, `"echo"`).
+    /// The command to launch the AI agent process (e.g., `"opencode"`, `"claude"`, `"python"`).
     #[serde(default = "default_agent_command")]
     pub command: String,
     /// Optional arguments to pass to the agent process command line.
@@ -60,9 +69,14 @@ pub struct AgentConfig {
 fn default_input_port() -> u16 { 3001 }
 fn default_output_port() -> u16 { 3002 }
 fn default_addon_enabled() -> bool { true }
-fn default_memory_file() -> String { "data/memory/long_term_memory.md".to_string() }
-fn default_session_dir() -> String { "data/memory/chats".to_string() }
-fn default_agent_md() -> String { "data/agent.md".to_string() }
+
+fn resolve_nebula_path(relative: &str) -> String {
+    nebula_dir().join(relative).to_string_lossy().to_string()
+}
+
+fn default_memory_file() -> String { resolve_nebula_path("data/memory/long_term_memory.md") }
+fn default_session_dir() -> String { resolve_nebula_path("data/memory/chats") }
+fn default_agent_md() -> String { resolve_nebula_path("data/agent.md") }
 fn default_agent_command() -> String { "echo".to_string() }
 fn default_agent_mode() -> String { "stdio".to_string() }
 fn default_agent_url() -> String { "http://localhost:8080".to_string() }
@@ -90,28 +104,33 @@ impl Default for AgentConfig {
 }
 
 impl Config {
-    /// Load configuration from `config.toml` in the current working directory.
+    /// Load configuration from `~/.nebula/config.toml`.
     ///
-    /// If the file is not found, defaults are loaded and a warning is logged.
+    /// Falls back to `config.toml` in the current working directory. If neither exists,
+    /// defaults are loaded and a warning is logged.
     ///
     /// # Errors
     ///
     /// Returns an error if the file exists but cannot be read or parsed.
     pub fn load() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let config_path = PathBuf::from("config.toml");
-        if config_path.exists() {
-            let content = std::fs::read_to_string(&config_path)?;
-            let config: Config = toml::from_str(&content)?;
-            Ok(config)
-        } else {
-            tracing::warn!("config.toml not found, using defaults");
-            Ok(Config {
-                input_port: default_input_port(),
-                output_port: default_output_port(),
-                addon: AddonConfig::default(),
-                agent: AgentConfig::default(),
-            })
+        let paths = [
+            nebula_dir().join("config.toml"),
+            PathBuf::from("config.toml"),
+        ];
+        for config_path in &paths {
+            if config_path.exists() {
+                let content = std::fs::read_to_string(config_path)?;
+                let config: Config = toml::from_str(&content)?;
+                return Ok(config);
+            }
         }
+        tracing::warn!("config.toml not found in ~/.nebula/ or CWD, using defaults");
+        Ok(Config {
+            input_port: default_input_port(),
+            output_port: default_output_port(),
+            addon: AddonConfig::default(),
+            agent: AgentConfig::default(),
+        })
     }
 }
 
@@ -193,10 +212,16 @@ endpoint_url = "http://localhost:9000"
     #[test]
     fn test_addon_config_default() {
         let addon = AddonConfig::default();
+        eprintln!("memory_file = {:?}", addon.memory_file);
+        eprintln!("session_dir = {:?}", addon.session_history_dir);
+        eprintln!("agent_md    = {:?}", addon.agent_md_path);
         assert!(addon.enabled);
-        assert_eq!(addon.memory_file, "data/memory/long_term_memory.md");
-        assert_eq!(addon.session_history_dir, "data/memory/chats");
-        assert_eq!(addon.agent_md_path, "data/agent.md");
+        assert!(addon.memory_file.contains("nebula"));
+        assert!(addon.memory_file.contains("long_term_memory.md"));
+        assert!(addon.session_history_dir.contains("nebula"));
+        assert!(addon.session_history_dir.contains("chats"));
+        assert!(addon.agent_md_path.contains("nebula"));
+        assert!(addon.agent_md_path.contains("agent.md"));
     }
 
     #[test]

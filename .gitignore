@@ -1,0 +1,6 @@
+# Rust build artifacts
+backend/target/
+
+# Session and memory data (auto-generated, not committed)
+backend/data/
+!backend/data/.gitkeep

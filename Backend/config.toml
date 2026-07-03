@@ -1,0 +1,50 @@
+# =============================================================================
+# Nebula Backend Server Configuration
+# =============================================================================
+# Copy this file to `config.toml` in the backend directory and customize.
+
+# -----------------------------------------------------------------------------
+# Port Configuration
+# -----------------------------------------------------------------------------
+# The input port receives all user requests (text, files, audio/video streams).
+# The output port serves AI responses and session data to clients.
+
+input_port = 3001   # [FILL: input port] - Change to your desired input port
+output_port = 3002  # [FILL: output port] - Change to your desired output port
+
+# -----------------------------------------------------------------------------
+# Addon Configuration
+# -----------------------------------------------------------------------------
+# The addon provides long-term memory, session history, and agent.md integration.
+
+[addon]
+enabled = true                              # Set to false to disable the addon
+memory_file = "data/memory/long_term_memory.md"
+session_history_dir = "data/memory/chats"
+agent_md_path = "data/agent.md"
+
+# -----------------------------------------------------------------------------
+# Agent Configuration
+# -----------------------------------------------------------------------------
+# Configure how the server communicates with your AI agent.
+# Works with any agent (OpenClaw, Hermes, OpenCode, etc.) without extra setup.
+
+[agent]
+# The command to launch the agent process.
+# Examples:
+#   command = "openclaw"
+#   command = "hermes"
+#   command = "opencode"
+#   command = "python"  (with args = ["-m", "my_agent"])
+command = "echo"        # [FILL: agent command] - Replace with your agent binary
+
+# Optional arguments passed to the agent command.
+args = []               # e.g., ["--model", "gpt-4", "--verbose"]
+
+# Communication mode: "stdio" or "http"
+#   - "stdio": Spawns the agent process, writes JSON to stdin, reads from stdout.
+#   - "http":  POSTs JSON to the agent's HTTP endpoint.
+mode = "stdio"
+
+# If mode = "http", set the agent's base URL here.
+endpoint_url = "http://localhost:8080"

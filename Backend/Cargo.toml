@@ -1,6 +1,21 @@
 [package]
-name = "Backend"
+name = "nebula-backend"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["multipart", "ws", "macros"] }
+axum-extra = { version = "0.10", features = ["multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures = "0.3"
+tokio-tungstenite = "0.26"
+bytes = "1"

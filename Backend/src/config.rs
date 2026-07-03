@@ -12,7 +12,7 @@ pub fn nebula_dir() -> PathBuf {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
-    PathBuf::from(home).join(".nebula")
+    PathBuf::from(home).join(".Nebula")
 }
 
 /// Complete application configuration.
@@ -216,11 +216,11 @@ endpoint_url = "http://localhost:9000"
         eprintln!("session_dir = {:?}", addon.session_history_dir);
         eprintln!("agent_md    = {:?}", addon.agent_md_path);
         assert!(addon.enabled);
-        assert!(addon.memory_file.contains("nebula"));
+        assert!(addon.memory_file.contains("Nebula"));
         assert!(addon.memory_file.contains("long_term_memory.md"));
-        assert!(addon.session_history_dir.contains("nebula"));
+        assert!(addon.session_history_dir.contains("Nebula"));
         assert!(addon.session_history_dir.contains("chats"));
-        assert!(addon.agent_md_path.contains("nebula"));
+        assert!(addon.agent_md_path.contains("Nebula"));
         assert!(addon.agent_md_path.contains("agent.md"));
     }
 

@@ -153,6 +153,22 @@ impl SessionManager {
         Ok(())
     }
 
+    /// Delete a session: removes it from memory and recursively deletes its folder from disk.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the session ID is not found or if deleting the folder fails.
+    pub fn delete_session(&mut self, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let session = self.sessions.remove(session_id)
+            .ok_or_else(|| format!("Session not found: {}", session_id))?;
+
+        if session.folder_path.exists() {
+            std::fs::remove_dir_all(&session.folder_path)?;
+            info!("Deleted session folder: {}", session.folder_path.display());
+        }
+        Ok(())
+    }
+
     /// Save a raw byte buffer file asset into the session's `assets/` subfolder.
     ///
     /// # Errors

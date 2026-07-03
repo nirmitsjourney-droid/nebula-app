@@ -59,8 +59,9 @@ const DEFAULT_MEMORY_MD: &str = r#"# Long-Term Memory
 "#;
 
 const OPENCODE_WRAPPER_PS1: &str = r#"# opencode-wrapper.ps1
-# Reads JSON from stdin, extracts the payload (message), sends to opencode run,
-# and outputs the response as a single line.
+# Reads JSON from stdin, maintains per-session conversation history,
+# sends the full conversation context to opencode run,
+# and outputs only the new response as a single line.
 
 param()
 
@@ -70,12 +71,43 @@ try {
         exit 1
     }
     $parsed = $inputJson | ConvertFrom-Json
+    $sessionId = $parsed.session_id
     $message = $parsed.payload
+    $agentMd   = $parsed.agent_md
+    $longTermMemory = $parsed.long_term_memory
     if ([string]::IsNullOrWhiteSpace($message)) {
         $message = ""
     }
 
-    $output = & opencode run --format json $message 2>&1
+    # Determine nebula directory from this script's location
+    $nebulaDir = Split-Path -Parent $PSCommandPath
+    $convDir = Join-Path $nebulaDir "data\conversations"
+    if (-not (Test-Path $convDir)) {
+        New-Item -ItemType Directory -Path $convDir -Force | Out-Null
+    }
+    $convFile = Join-Path $convDir "$sessionId.txt"
+
+    # Read existing conversation
+    $conversation = ""
+    if (Test-Path $convFile) {
+        $conversation = Get-Content $convFile -Raw
+    }
+
+    # If this is a fresh conversation and agent_md is provided, prepend system instructions
+    if ([string]::IsNullOrWhiteSpace($conversation) -and -not [string]::IsNullOrWhiteSpace($agentMd)) {
+        $conversation = "System: $agentMd`r`n`r`n"
+    }
+
+    # If long-term memory is provided, include it as context (only on first message)
+    if ($conversation -match "^System:" -and -not [string]::IsNullOrWhiteSpace($longTermMemory)) {
+        $conversation += "Context: $longTermMemory`r`n`r`n"
+    }
+
+    # Append user message
+    $conversation += "User: $message`r`n"
+
+    # Send full conversation to opencode
+    $output = & opencode run --format json $conversation 2>&1
     $responseText = ""
     foreach ($line in $output) {
         $lineStr = "$line"
@@ -92,6 +124,11 @@ try {
     if ([string]::IsNullOrWhiteSpace($responseText)) {
         $responseText = "I processed your request."
     }
+
+    # Append response to conversation and persist
+    $conversation += "Assistant: $responseText`r`n"
+    Set-Content -Path $convFile -Value $conversation -Encoding utf8
+
     Write-Output $responseText
 } catch {
     Write-Output "Error processing request"
@@ -100,8 +137,9 @@ try {
 "#;
 
 const CLAUDE_WRAPPER_PS1: &str = r#"# claude-wrapper.ps1
-# Reads JSON from stdin, extracts the payload (message), sends to claude,
-# and outputs the response as a single line.
+# Reads JSON from stdin, maintains per-session conversation history,
+# sends the full conversation context to claude,
+# and outputs only the new response as a single line.
 
 param()
 
@@ -111,17 +149,54 @@ try {
         exit 1
     }
     $parsed = $inputJson | ConvertFrom-Json
+    $sessionId = $parsed.session_id
     $message = $parsed.payload
+    $agentMd   = $parsed.agent_md
+    $longTermMemory = $parsed.long_term_memory
     if ([string]::IsNullOrWhiteSpace($message)) {
         $message = ""
     }
 
-    $output = & claude "$message" 2>&1
+    # Determine nebula directory from this script's location
+    $nebulaDir = Split-Path -Parent $PSCommandPath
+    $convDir = Join-Path $nebulaDir "data\conversations"
+    if (-not (Test-Path $convDir)) {
+        New-Item -ItemType Directory -Path $convDir -Force | Out-Null
+    }
+    $convFile = Join-Path $convDir "$sessionId.txt"
+
+    # Read existing conversation
+    $conversation = ""
+    if (Test-Path $convFile) {
+        $conversation = Get-Content $convFile -Raw
+    }
+
+    # If this is a fresh conversation and agent_md is provided, prepend system instructions
+    if ([string]::IsNullOrWhiteSpace($conversation) -and -not [string]::IsNullOrWhiteSpace($agentMd)) {
+        $conversation = "System: $agentMd`r`n`r`n"
+    }
+
+    # If long-term memory is provided, include it as context (once)
+    if ($conversation -match "^System:" -and -not [string]::IsNullOrWhiteSpace($longTermMemory)) {
+        $conversation += "Context: $longTermMemory`r`n`r`n"
+    }
+
+    # Append user message
+    $conversation += "User: $message`r`n"
+
+    # Send full conversation to claude
+    $output = & claude "$conversation" 2>&1
     $responseText = $output | Out-String
     if ([string]::IsNullOrWhiteSpace($responseText)) {
         $responseText = "I processed your request."
     }
-    Write-Output $responseText.Trim()
+    $responseText = $responseText.Trim()
+
+    # Append response to conversation and persist
+    $conversation += "Assistant: $responseText`r`n"
+    Set-Content -Path $convFile -Value $conversation -Encoding utf8
+
+    Write-Output $responseText
 } catch {
     Write-Output "Error processing request"
     exit 1

@@ -15,7 +15,7 @@ fn test_config_load_from_file_fallback() {
 #[test]
 fn test_nebula_dir_resolves() {
     let dir = nebula_backend::config::nebula_dir();
-    assert!(dir.to_string_lossy().contains(".nebula"));
+    assert!(dir.to_string_lossy().contains(".Nebula"));
 }
 
 #[test]

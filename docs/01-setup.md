@@ -26,13 +26,14 @@
    ./nebula-backend.exe
    ```
 
-   On first run, the binary automatically creates `~/.nebula/` with:
+   On first run, the binary automatically creates `~/.Nebula/` with:
    - `config.toml` — server configuration
    - `opencode-wrapper.ps1` — bridge script for OpenCode
    - `claude-wrapper.ps1` — bridge script for Claude Code
    - `data/agent.md` — agent persona instructions
    - `data/memory/long_term_memory.md` — persistent memory
    - `data/memory/chats/` — session history storage
+   - `data/conversations/` — per-session AI agent conversation files (managed by wrapper)
 
    No manual file creation needed.
 
@@ -47,7 +48,7 @@
 
 ## Configuration
 
-All configuration lives in `~/.nebula/config.toml`. Edit it to customize:
+All configuration lives in `~/.Nebula/config.toml`. Edit it to customize:
 
 ```toml
 input_port = 3001
@@ -58,7 +59,7 @@ enabled = true
 
 [agent]
 command = "powershell"
-args = ["-File", "C:\\Users\\You\\.nebula\\opencode-wrapper.ps1"]
+args = ["-File", "C:\\Users\\You\\.Nebula\\opencode-wrapper.ps1"]
 mode = "stdio"
 ```
 
@@ -89,12 +90,12 @@ opencode run "hello"        # Verify it works
 
 ### Option B: Claude Code
 
-Edit `~/.nebula/config.toml` to use the Claude wrapper:
+Edit `~/.Nebula/config.toml` to use the Claude wrapper:
 
 ```toml
 [agent]
 command = "powershell"
-args = ["-File", "C:\\Users\\You\\.nebula\\claude-wrapper.ps1"]
+args = ["-File", "C:\\Users\\You\\.Nebula\\claude-wrapper.ps1"]
 mode = "stdio"
 ```
 

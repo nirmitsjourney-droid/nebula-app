@@ -6,9 +6,9 @@
 
 use axum::{
     Router,
-    extract::{State, WebSocketUpgrade, Multipart},
+    extract::{State, WebSocketUpgrade, Multipart, Path},
     response::IntoResponse,
-    routing::{get, post},
+    routing::{get, post, delete},
     Json,
 };
 use serde::Deserialize;
@@ -16,6 +16,7 @@ use std::sync::Arc;
 use tracing::{info, error};
 
 use crate::agent;
+use crate::config;
 use crate::media;
 use crate::state::{AgentMessage, AppState, ContentType};
 
@@ -63,6 +64,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/addon/status", get(addon_status))
         .route("/sessions", get(list_sessions))
         .route("/sessions/new", post(create_session))
+        .route("/sessions/{id}", delete(delete_session))
         .with_state(state)
 }
 
@@ -123,6 +125,37 @@ async fn create_session(
             "error": format!("Failed to create session: {}", e),
         })),
     }
+}
+
+/// Delete a session and its associated conversation history.
+async fn delete_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    // Delete session folder
+    {
+        let mut mgr = state.session_manager.write().await;
+        if let Err(e) = mgr.delete_session(&id) {
+            return Json(serde_json::json!({
+                "error": format!("Failed to delete session: {}", e),
+            }));
+        }
+    }
+
+    // Delete the wrapper's conversation file for this session
+    let conv_path = config::nebula_dir().join("data/conversations").join(format!("{}.txt", id));
+    if conv_path.exists() {
+        if let Err(e) = std::fs::remove_file(&conv_path) {
+            error!("Failed to delete conversation file {}: {}", conv_path.display(), e);
+        } else {
+            info!("Deleted conversation file: {}", conv_path.display());
+        }
+    }
+
+    Json(serde_json::json!({
+        "status": "deleted",
+        "session_id": id,
+    }))
 }
 
 /// Ensure a session exists by ID, creating a new session if omitted or not found.
@@ -433,10 +466,11 @@ mod tests {
     use crate::config::Config;
 
     async fn test_state() -> Arc<AppState> {
+        let temp_dir = std::env::temp_dir().join(format!("nebula_test_{}", uuid::Uuid::new_v4()));
         let config = Config {
             input_port: 3001,
             output_port: 3002,
-            addon: crate::config::AddonConfig { enabled: false, memory_file: String::new(), session_history_dir: String::new(), agent_md_path: String::new() },
+            addon: crate::config::AddonConfig { enabled: false, memory_file: String::new(), session_history_dir: temp_dir.to_string_lossy().to_string(), agent_md_path: String::new() },
             agent: crate::config::AgentConfig { command: "echo".into(), args: vec![], mode: "stdio".into(), endpoint_url: String::new() },
         };
         Arc::new(AppState::new(config).await.unwrap())

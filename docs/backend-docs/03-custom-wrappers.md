@@ -1,4 +1,4 @@
-# Nebula Backend - Custom Wrapper Scripts
+# Nebula Backend — Custom Wrapper Scripts
 
 ## Overview
 
@@ -20,9 +20,9 @@ Nebula sends one JSON line to the wrapper's **stdin**:
 }
 ```
 
-The wrapper must output **one line of text** to **stdout** — this becomes the AI response.
+The wrapper must output **one line of text** to **stdout** — this becomes the AI response. `session_id` is required for conversation continuity.
 
-`session_id` is required for conversation continuity. The wrapper should use it to maintain a per-session conversation file.
+The `content_type` field indicates the input type (`text`, `html`, `markdown`, `file`, `audio_stream`, `video_stream`, `image`). For file uploads, a `file_path` and `metadata` object are also provided.
 
 ## Conversation Continuity Contract
 
@@ -33,47 +33,134 @@ Every wrapper **must**:
 3. Maintain a per-session conversation file at `~/.Nebula/data/conversations/{session_id}.txt`
 4. Load the existing conversation from that file (if any)
 5. If this is a new conversation and `agent_md` is provided, prepend it as system instructions
-6. Append the new user message as `User: {payload}`
-7. Send the **full conversation** to the underlying AI CLI
-8. Append the AI's response as `Assistant: {response}`
-9. Save the conversation file
-10. Output only the new response text to stdout
+6. If this is a new conversation and `long_term_memory` is provided, include it as context
+7. Append the new user message as `User: {payload}`
+8. Send the **full conversation** to the underlying AI CLI
+9. Append the AI's response as `Assistant: {response}`
+10. Save the conversation file
+11. Output only the new response text to stdout
 
-## Writing a Wrapper
+## Default Wrappers
 
-### Basic Structure (Any Language)
+### OpenCode Wrapper (`~/.Nebula/opencode-wrapper.ps1`)
+
+```powershell
+param()
+try {
+    $inputJson = [Console]::In.ReadToEnd()
+    if ([string]::IsNullOrWhiteSpace($inputJson)) { exit 1 }
+    $parsed = $inputJson | ConvertFrom-Json
+    $sessionId = $parsed.session_id
+    $message = $parsed.payload
+    $agentMd = $parsed.agent_md
+    $longTermMemory = $parsed.long_term_memory
+    if ([string]::IsNullOrWhiteSpace($message)) { $message = "" }
+
+    $nebulaDir = Split-Path -Parent $PSCommandPath
+    $convDir = Join-Path $nebulaDir "data\conversations"
+    if (-not (Test-Path $convDir)) { New-Item -ItemType Directory -Path $convDir -Force | Out-Null }
+    $convFile = Join-Path $convDir "$sessionId.txt"
+
+    $conversation = ""
+    if (Test-Path $convFile) { $conversation = Get-Content $convFile -Raw }
+    if ([string]::IsNullOrWhiteSpace($conversation) -and -not [string]::IsNullOrWhiteSpace($agentMd)) {
+        $conversation = "System: $agentMd`r`n`r`n"
+    }
+    if ($conversation -match "^System:" -and -not [string]::IsNullOrWhiteSpace($longTermMemory)) {
+        $conversation += "Context: $longTermMemory`r`n`r`n"
+    }
+
+    $conversation += "User: $message`r`n"
+    $output = & opencode run --format json $conversation 2>&1
+    $responseText = ""
+    foreach ($line in $output) {
+        $lineStr = "$line"
+        if ([string]::IsNullOrWhiteSpace($lineStr)) { continue }
+        try {
+            $event = $lineStr | ConvertFrom-Json
+            if ($event.type -eq "text" -and $event.part.text) { $responseText += $event.part.text }
+        } catch {}
+    }
+    if ([string]::IsNullOrWhiteSpace($responseText)) { $responseText = "I processed your request." }
+
+    $conversation += "Assistant: $responseText`r`n"
+    Set-Content -Path $convFile -Value $conversation -Encoding utf8
+    Write-Output $responseText
+} catch { Write-Output "Error processing request"; exit 1 }
+```
+
+### Claude Code Wrapper (`~/.Nebula/claude-wrapper.ps1`)
+
+```powershell
+param()
+try {
+    $inputJson = [Console]::In.ReadToEnd()
+    if ([string]::IsNullOrWhiteSpace($inputJson)) { exit 1 }
+    $parsed = $inputJson | ConvertFrom-Json
+    $sessionId = $parsed.session_id
+    $message = $parsed.payload
+    $agentMd = $parsed.agent_md
+    $longTermMemory = $parsed.long_term_memory
+    if ([string]::IsNullOrWhiteSpace($message)) { $message = "" }
+
+    $nebulaDir = Split-Path -Parent $PSCommandPath
+    $convDir = Join-Path $nebulaDir "data\conversations"
+    if (-not (Test-Path $convDir)) { New-Item -ItemType Directory -Path $convDir -Force | Out-Null }
+    $convFile = Join-Path $convDir "$sessionId.txt"
+
+    $conversation = ""
+    if (Test-Path $convFile) { $conversation = Get-Content $convFile -Raw }
+    if ([string]::IsNullOrWhiteSpace($conversation) -and -not [string]::IsNullOrWhiteSpace($agentMd)) {
+        $conversation = "System: $agentMd`r`n`r`n"
+    }
+    if ($conversation -match "^System:" -and -not [string]::IsNullOrWhiteSpace($longTermMemory)) {
+        $conversation += "Context: $longTermMemory`r`n`r`n"
+    }
+
+    $conversation += "User: $message`r`n"
+    $output = & claude "$conversation" 2>&1
+    $responseText = $output | Out-String
+    if ([string]::IsNullOrWhiteSpace($responseText)) { $responseText = "I processed your request." }
+    $responseText = $responseText.Trim()
+
+    $conversation += "Assistant: $responseText`r`n"
+    Set-Content -Path $convFile -Value $conversation -Encoding utf8
+    Write-Output $responseText
+} catch { Write-Output "Error processing request"; exit 1 }
+```
+
+## Writing Custom Wrappers
+
+### Basic Structure (Python)
 
 ```python
 #!/usr/bin/env python3
 import sys, json, subprocess, os
 
-# 1. Read JSON from stdin
 line = sys.stdin.read()
 data = json.loads(line)
 session_id = data["session_id"]
 message = data["payload"]
 agent_md = data.get("agent_md", "")
+long_term_memory = data.get("long_term_memory", "")
 
-# 2. Determine conversation file path
 nebula_dir = os.path.dirname(os.path.abspath(__file__))
 conv_dir = os.path.join(nebula_dir, "data", "conversations")
 os.makedirs(conv_dir, exist_ok=True)
 conv_file = os.path.join(conv_dir, f"{session_id}.txt")
 
-# 3. Load existing conversation
 conversation = ""
 if os.path.exists(conv_file):
     with open(conv_file, "r") as f:
         conversation = f.read()
 
-# 4. If new conversation, prepend agent instructions
 if not conversation and agent_md:
     conversation = f"System: {agent_md}\n\n"
+if not conversation and long_term_memory:
+    conversation = f"System: {agent_md}\n\nContext: {long_term_memory}\n\n"
 
-# 5. Append user message
 conversation += f"User: {message}\n"
 
-# 6. Send full conversation to the AI CLI
 result = subprocess.run(
     ["your-agent-cli"],
     input=conversation,
@@ -81,92 +168,14 @@ result = subprocess.run(
 )
 response = result.stdout.strip()
 
-# 7. Append response and persist
 conversation += f"Assistant: {response}\n"
 with open(conv_file, "w") as f:
     f.write(conversation)
 
-# 8. Output only the new response
 print(response)
 ```
 
-### PowerShell (Windows) — OpenCode
-
-This is the default wrapper at `~/.Nebula/opencode-wrapper.ps1`:
-
-```powershell
-param()
-try {
-    $inputJson = [Console]::In.ReadToEnd()
-    $parsed = $inputJson | ConvertFrom-Json
-    $sessionId = $parsed.session_id
-    $message = $parsed.payload
-    $agentMd = $parsed.agent_md
-
-    $nebulaDir = Split-Path -Parent $PSCommandPath
-    $convDir = Join-Path $nebulaDir "data\conversations"
-    if (-not (Test-Path $convDir)) { New-Item -ItemType Directory -Path $convDir -Force | Out-Null }
-    $convFile = Join-Path $convDir "$sessionId.txt"
-
-    $conversation = ""
-    if (Test-Path $convFile) { $conversation = Get-Content $convFile -Raw }
-    if ([string]::IsNullOrWhiteSpace($conversation) -and -not [string]::IsNullOrWhiteSpace($agentMd)) {
-        $conversation = "System: $agentMd`r`n`r`n"
-    }
-
-    $conversation += "User: $message`r`n"
-
-    $output = & opencode run --format json $conversation 2>&1
-    $responseText = ""
-    foreach ($line in $output) {
-        $lineStr = "$line"
-        try {
-            $event = $lineStr | ConvertFrom-Json
-            if ($event.type -eq "text" -and $event.part.text) { $responseText += $event.part.text }
-        } catch {}
-    }
-
-    $conversation += "Assistant: $responseText`r`n"
-    Set-Content -Path $convFile -Value $conversation -Encoding utf8
-    Write-Output $responseText
-} catch { Write-Output "Error processing request"; exit 1 }
-```
-
-### PowerShell — Claude Code
-
-Available at `~/.Nebula/claude-wrapper.ps1`:
-
-```powershell
-param()
-try {
-    $inputJson = [Console]::In.ReadToEnd()
-    $parsed = $inputJson | ConvertFrom-Json
-    $sessionId = $parsed.session_id
-    $message = $parsed.payload
-    $agentMd = $parsed.agent_md
-
-    $nebulaDir = Split-Path -Parent $PSCommandPath
-    $convDir = Join-Path $nebulaDir "data\conversations"
-    if (-not (Test-Path $convDir)) { New-Item -ItemType Directory -Path $convDir -Force | Out-Null }
-    $convFile = Join-Path $convDir "$sessionId.txt"
-
-    $conversation = ""
-    if (Test-Path $convFile) { $conversation = Get-Content $convFile -Raw }
-    if ([string]::IsNullOrWhiteSpace($conversation) -and -not [string]::IsNullOrWhiteSpace($agentMd)) {
-        $conversation = "System: $agentMd`r`n`r`n"
-    }
-
-    $conversation += "User: $message`r`n"
-    $output = & claude "$conversation" 2>&1
-    $responseText = ($output | Out-String).Trim()
-
-    $conversation += "Assistant: $responseText`r`n"
-    Set-Content -Path $convFile -Value $conversation -Encoding utf8
-    Write-Output $responseText
-} catch { Write-Output "Error processing request"; exit 1 }
-```
-
-### Bash/Linux — OpenCode
+### Basic Structure (Bash)
 
 ```bash
 #!/usr/bin/env bash
@@ -175,6 +184,7 @@ read -r line
 session_id=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
 message=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['payload'])")
 agent_md=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_md',''))")
+ltm=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin).get('long_term_memory',''))")
 
 nebula_dir="$(dirname "$(readlink -f "$0")")"
 conv_dir="$nebula_dir/data/conversations"
@@ -184,69 +194,7 @@ conv_file="$conv_dir/$session_id.txt"
 conversation=""
 [ -f "$conv_file" ] && conversation=$(cat "$conv_file")
 [ -z "$conversation" ] && [ -n "$agent_md" ] && conversation="System: $agent_md\n\n"
-
-conversation="$conversation\nUser: $message\n"
-response=$(opencode run --format json "$conversation" 2>/dev/null | \
-  python3 -c "
-import sys, json
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    try:
-        ev = json.loads(line)
-        if ev.get('type') == 'text':
-            print(ev.get('part', {}).get('text', ''), end='')
-    except: pass
-")
-
-conversation="$conversation\nAssistant: $response\n"
-echo "$conversation" > "$conv_file"
-echo "$response"
-```
-
-### Bash/Linux — Claude Code
-
-```bash
-#!/usr/bin/env bash
-set -e
-read -r line
-session_id=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
-message=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['payload'])")
-agent_md=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent_md',''))")
-
-nebula_dir="$(dirname "$(readlink -f "$0")")"
-conv_dir="$nebula_dir/data/conversations"
-mkdir -p "$conv_dir"
-conv_file="$conv_dir/$session_id.txt"
-
-conversation=""
-[ -f "$conv_file" ] && conversation=$(cat "$conv_file")
-[ -z "$conversation" ] && [ -n "$agent_md" ] && conversation="System: $agent_md\n\n"
-
-conversation="$conversation\nUser: $message\n"
-response=$(claude "$conversation" 2>/dev/null)
-
-conversation="$conversation\nAssistant: $response\n"
-echo "$conversation" > "$conv_file"
-echo "$response"
-```
-
-### Bash/Linux — Generic (any CLI)
-
-```bash
-#!/usr/bin/env bash
-set -e
-read -r line
-session_id=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['session_id'])")
-message=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin)['payload'])")
-
-nebula_dir="$(dirname "$(readlink -f "$0")")"
-conv_dir="$nebula_dir/data/conversations"
-mkdir -p "$conv_dir"
-conv_file="$conv_dir/$session_id.txt"
-
-conversation=""
-[ -f "$conv_file" ] && conversation=$(cat "$conv_file")
+[ -z "$conversation" ] && [ -n "$ltm" ] && conversation="$conversation\nContext: $ltm\n\n"
 
 conversation="$conversation\nUser: $message\n"
 response=$(your-cli "$conversation")
@@ -283,7 +231,8 @@ Expected output should be a single line with the agent's response.
 
 ## Error Handling
 
-- If the wrapper exits with non-zero code, Nebula logs the error but continues running
+- If the wrapper exits with a non-zero code, Nebula logs the error but continues running
 - If the wrapper outputs nothing, Nebula treats the response as empty
 - If the wrapper outputs multiple lines, Nebula only reads the first line
+- If the wrapper outputs an error message, it is recorded as-is in the session log
 - If a session is deleted via the API, the backend removes both the session folder and its conversation file

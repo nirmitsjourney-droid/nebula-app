@@ -1,13 +1,2 @@
 # Rust build artifacts
-Backend/target/
-
-# Session and memory data (auto-generated in ~/.nebula/)
-Backend/data/
-
-# Stray session directories (should never be in CWD)
-Backend/[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*/
-Backend/[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*-[0-9a-f]*
-
-# Wrapper scripts (embedded in binary, auto-generated in ~/.nebula/)
-Backend/opencode-wrapper.ps1
-Backend/claude-wrapper.ps1
+target/

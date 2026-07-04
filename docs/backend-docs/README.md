@@ -1,6 +1,6 @@
-# Nebula Backend - Documentation
+# Nebula Backend — Documentation
 
-A Rust backend server that bridges user inputs with AI agents (OpenCode, Claude, etc.).
+A Rust backend server that bridges user inputs with AI agents (OpenCode, Claude, etc.) using a dual-port architecture.
 
 ## Guides
 
@@ -12,31 +12,29 @@ A Rust backend server that bridges user inputs with AI agents (OpenCode, Claude,
 
 ## Quick Links
 
-- **Binary**: `Backend/target/release/nebula-backend.exe`
+- **Binary**: `target/release/nebula-backend.exe`
 - **Config**: `~/.Nebula/config.toml` (auto-created on first run)
 - **Wrappers**: `~/.Nebula/opencode-wrapper.ps1` and `~/.Nebula/claude-wrapper.ps1`
 - **Data**: `~/.Nebula/data/` (agent.md, long-term memory, session history, conversation files)
 
-## Source Code
+## Source Layout
 
 ```
-Backend/
-├── src/
-│   ├── main.rs      # Entrypoint + auto-init of ~/.Nebula/
-│   ├── config.rs    # Config loading from ~/.Nebula/
-│   ├── state.rs     # Shared AppState & AgentMessage
-│   ├── addon.rs     # Memory & session addon
-│   ├── session.rs   # Session manager & chat log
-│   ├── agent.rs     # Agent communication (stdio/http)
-│   ├── input.rs     # Input server routes
-│   ├── output.rs    # Output server routes
-│   └── media.rs     # Video/audio streaming
-└── Cargo.toml
+src/
+├── lib.rs      # Library root, re-exports all modules
+├── main.rs     # Entrypoint, auto-init, server bootstrap
+├── config.rs   # Config loading (~/.Nebula/config.toml, CWD fallback)
+├── state.rs    # Shared AppState, AgentMessage, ContentType enum
+├── session.rs  # Session manager with disk-persisted chat logs
+├── addon.rs    # Long-term memory & agent.md management
+├── agent.rs    # Agent communication (stdio/http) + media forwarders
+├── input.rs    # Input server routes (port 3001)
+├── output.rs   # Output server routes (port 3002)
+└── media.rs    # WebSocket video/audio stream handlers
 ```
 
 ## Building from Source
 
 ```bash
-cd Backend
 cargo build --release
 ```
